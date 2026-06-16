@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "UserFile": {
+      "title": "UserFile",
+      "description": "A flat document stored in the user filesystem",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "File name"
+        },
+        "content": {
+          "type": "string",
+          "description": "File content body"
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of the file"
+        },
+        "modifiedAt": {
+          "type": "string",
+          "description": "Arabic/ISO localized time string of last update"
+        }
+      },
+      "required": ["name", "content", "type", "modifiedAt"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "System UI and experience customizer settings per user",
+      "type": "object",
+      "properties": {
+        "wallpaper": {
+          "type": "string",
+          "description": "Color code or CSS gradient syntax"
+        },
+        "wallpaperType": {
+          "type": "string",
+          "description": "Visual type identifier for the wallpaper"
+        },
+        "accentColor": {
+          "type": "string",
+          "description": "UI Accent color key"
+        },
+        "soundEnabled": {
+          "type": "boolean",
+          "description": "Mechanical sounds enabled toggle"
+        },
+        "username": {
+          "type": "string",
+          "description": "User custom name"
+        }
+      },
+      "required": ["wallpaper", "wallpaperType", "accentColor", "soundEnabled", "username"]
+    },
+    "CalendarEvent": {
+      "title": "CalendarEvent",
+      "description": "A scheduled calendar event or reminder task synced to firestore",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique event identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "Event task title"
+        },
+        "description": {
+          "type": "string",
+          "description": "Details about the event"
+        },
+        "date": {
+          "type": "string",
+          "description": "YYYY-MM-DD formatted date string"
+        },
+        "time": {
+          "type": "string",
+          "description": "HH:MM formatted 24-hr time string"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["work", "personal", "urgent", "reminder"],
+          "description": "Context category of the scheduled task"
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Completion flag"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of event drafting"
+        }
+      },
+      "required": ["id", "title", "description", "date", "time", "category", "completed", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users_files/{userId}/documents/{documentId}": {
+      "schema": "UserFile",
+      "description": "User custom notepad documents synced on Firestore"
+    },
+    "/users_settings/{userId}": {
+      "schema": "UserSettings",
+      "description": "User OS preference settings stored on cloud Database"
+    },
+    "/users_calendar/{userId}/events/{eventId}": {
+      "schema": "CalendarEvent",
+      "description": "User scheduled reminders and tasks synced with calendar app"
+    }
+  }
+}

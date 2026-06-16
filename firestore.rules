@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default catch-all deny rule
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Validation for User Settings
+    function isValidSettings(settingsData) {
+      return settingsData.keys().hasAll(['wallpaper', 'wallpaperType', 'accentColor', 'soundEnabled', 'username'])
+          && settingsData.keys().size() == 5
+          && settingsData.wallpaper is string
+          && settingsData.wallpaper.size() <= 200
+          && settingsData.wallpaperType is string
+          && settingsData.wallpaperType.size() <= 50
+          && settingsData.accentColor is string
+          && settingsData.accentColor.size() <= 50
+          && settingsData.soundEnabled is bool
+          && settingsData.username is string
+          && settingsData.username.size() <= 100;
+    }
+
+    // Validation for Files
+    function isValidFile(fileData) {
+      return fileData.keys().hasAll(['name', 'content', 'type', 'modifiedAt'])
+          && fileData.keys().size() == 4
+          && fileData.name is string
+          && fileData.name.size() <= 256
+          && fileData.content is string
+          && fileData.content.size() <= 50000
+          && fileData.type is string
+          && fileData.type.size() <= 50
+          && fileData.modifiedAt is string
+          && fileData.modifiedAt.size() <= 100;
+    }
+
+    // Validation for Calendar Events
+    function isValidEvent(eventData) {
+      return eventData.keys().hasAll(['id', 'title', 'description', 'date', 'time', 'category', 'completed', 'createdAt'])
+          && eventData.keys().size() == 8
+          && eventData.id is string
+          && eventData.id.size() <= 128
+          && eventData.title is string
+          && eventData.title.size() <= 150
+          && eventData.description is string
+          && eventData.description.size() <= 1000
+          && eventData.date is string
+          && eventData.date.size() <= 10
+          && eventData.time is string
+          && eventData.time.size() <= 5
+          && eventData.category is string
+          && eventData.category.size() <= 50
+          && eventData.completed is bool
+          && eventData.createdAt is string
+          && eventData.createdAt.size() <= 100;
+    }
+
+    // Rule: User Settings
+    match /users_settings/{userId} {
+      allow get: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidSettings(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
+
+    // Rule: User Files filesystem
+    match /users_files/{userId}/documents/{documentId} {
+      allow get, list: if isOwner(userId) && isValidId(documentId);
+      allow create, update: if isOwner(userId) && isValidId(documentId) && isValidFile(request.resource.data);
+      allow delete: if isOwner(userId) && isValidId(documentId);
+    }
+
+    // Rule: User Calendar events list
+    match /users_calendar/{userId}/events/{eventId} {
+      allow get, list: if isOwner(userId) && isValidId(eventId);
+      allow create, update: if isOwner(userId) && isValidId(eventId) && isValidEvent(request.resource.data);
+      allow delete: if isOwner(userId) && isValidId(eventId);
+    }
+  }
+}

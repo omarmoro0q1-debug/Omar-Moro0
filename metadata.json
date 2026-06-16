@@ -1,0 +1,6 @@
+{
+  "name": "Gemileith OS Optimum",
+  "description": "النظام المتكامل والسحابي فائق السرعة والأداء، مدمج مع ذكاء جيمي المتطور ومجموعة أدوات ووسائط تفاعلية.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

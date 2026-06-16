@@ -188,6 +188,48 @@ export default function App() {
     }
   };
 
+  const lastDarkModeRef = useRef<boolean | undefined>(undefined);
+
+  // Dynamic CSS variables injector supporting the high-contrast dark theme vs Immersive-UI theme switch
+  useEffect(() => {
+    const isDarkGlobal = !!settings.darkMode;
+    const root = document.documentElement;
+    if (isDarkGlobal) {
+      // High-contrast dark mode values
+      root.style.setProperty('--bg-primary', '#000000');
+      root.style.setProperty('--bg-window', '#060709');
+      root.style.setProperty('--bg-header', '#0e0f12');
+      root.style.setProperty('--bg-inner', '#000000');
+      root.style.setProperty('--text-primary', '#ffffff');
+      root.style.setProperty('--text-secondary', '#ffffff');
+      root.style.setProperty('--border-primary', '#ffffff');
+      root.style.setProperty('--border-secondary', 'rgba(255, 255, 255, 0.45)');
+      root.style.setProperty('--shadow-primary', 'none');
+      root.style.setProperty('--glow-cyan', '#ffffff');
+    } else {
+      // Deluxe Immersive UI theme default values
+      root.style.setProperty('--bg-primary', '#050608');
+      root.style.setProperty('--bg-window', '#050608');
+      root.style.setProperty('--bg-header', '#0c0f17');
+      root.style.setProperty('--bg-inner', '#0f172a'); // slate-900
+      root.style.setProperty('--text-primary', '#e2e8f0'); // slate-200
+      root.style.setProperty('--text-secondary', '#94a3b8'); // slate-400
+      root.style.setProperty('--border-primary', 'rgba(6, 182, 212, 0.2)'); // cyan-500/20
+      root.style.setProperty('--border-secondary', 'rgba(6, 182, 212, 0.15)');
+      root.style.setProperty('--shadow-primary', '0 0 20px rgba(6, 182, 212, 0.12)');
+      root.style.setProperty('--glow-cyan', 'rgba(6, 182, 212, 0.4)');
+    }
+
+    if (lastDarkModeRef.current !== undefined && lastDarkModeRef.current !== isDarkGlobal) {
+      if (isDarkGlobal) {
+        addNotification("تمكين النمط التبايني", "تم تحويل واجهات النظام للظلام الفائق عالي التباين للحماية البصرية وإراحة العين.", "success");
+      } else {
+        addNotification("تمكين المظهر الغامر", "تم تفعيل واجهة المظهر الغامرة والزجاج السائل ثلاثي الأبعاد لـ Gemileith OS.", "info");
+      }
+    }
+    lastDarkModeRef.current = isDarkGlobal;
+  }, [settings.darkMode]);
+
   // Save changes helper
   const handleUpdateSettings = async (newConf: Partial<UserSettings>) => {
     const updated = { ...settings, ...newConf };
@@ -205,6 +247,7 @@ export default function App() {
           accentColor: updated.accentColor,
           soundEnabled: updated.soundEnabled,
           username: updated.username,
+          darkMode: !!updated.darkMode,
         });
       } catch (e) {
         console.error('Error saving settings to cloud:', e);

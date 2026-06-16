@@ -46,4 +46,5 @@ export interface UserSettings {
   soundEnabled: boolean;
   username: string;
   isLoggedIn: boolean;
+  darkMode?: boolean;
 }

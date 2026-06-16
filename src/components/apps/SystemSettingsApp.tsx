@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Settings, Cpu, HardDrive, Volume2, User, RefreshCw, Palette, HelpCircle, Code, Shield } from 'lucide-react';
+import { Settings, Cpu, HardDrive, Volume2, User, RefreshCw, Palette, HelpCircle, Code, Shield, Sun, Moon } from 'lucide-react';
 import { UserSettings, WallpaperType } from '../../types';
 
 interface SystemSettingsAppProps {
@@ -259,6 +259,28 @@ export default function SystemSettingsApp({ settings, onUpdateSettings, isCloudS
                 onChange={(e) => onUpdateSettings({ soundEnabled: e.target.checked })}
                 className={`w-10 h-5 bg-slate-800 rounded-full cursor-pointer appearance-none inline-block relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:w-4 after:h-4 after:rounded-full after:bg-white after:transition-all checked:after:left-[22px]`}
                 style={{ backgroundColor: settings.soundEnabled ? (settings.accentColor === 'cyan' ? '#22d3ee' : settings.accentColor === 'rose' ? '#f43f5e' : settings.accentColor === 'emerald' ? '#10b981' : settings.accentColor === 'amber' ? '#f59e0b' : '#6366f1') : '#1e293b' }}
+              />
+            </div>
+
+            {/* Global Dark Mode High-Contrast Toggle */}
+            <div className="space-y-2.5 bg-slate-950 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                {settings.darkMode ? (
+                  <Moon className="w-5 h-5 text-indigo-400 animate-pulse" />
+                ) : (
+                  <Sun className="w-5 h-5 text-amber-400 rotate-12" />
+                )}
+                <div>
+                  <h5 className="text-xs font-bold text-white">الظلام التبايني الفائق (High Contrast Dark Mode)</h5>
+                  <p className="text-[10px] text-slate-500">التحويل الفوري بين مظهر النظام الغامر (Immersive Glass UI) واللون الأسود التبايني الموفر للطاقة.</p>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={!!settings.darkMode}
+                onChange={(e) => onUpdateSettings({ darkMode: e.target.checked })}
+                className={`w-10 h-5 bg-slate-800 rounded-full cursor-pointer appearance-none inline-block relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:w-4 after:h-4 after:rounded-full after:bg-white after:transition-all checked:after:left-[22px]`}
+                style={{ backgroundColor: settings.darkMode ? '#10b981' : '#1e293b' }}
               />
             </div>
 

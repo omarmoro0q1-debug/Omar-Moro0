@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { FileText, Save, Plus, Trash2, CloudCheck, CloudLightning, Eye, FileEdit } from 'lucide-react';
+import { FileText, Save, Plus, Trash2, CloudCheck, CloudLightning, Eye, FileEdit, Mic, MicOff } from 'lucide-react';
 import { FileItem } from '../../types';
 
 interface NotepadAppProps {
@@ -31,6 +31,85 @@ export default function NotepadApp({
   const [newFileName, setNewFileName] = useState('');
   const [isPreview, setIsPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Speech Recognition states
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [recognition, setRecognition] = useState<any>(null);
+  const [micLanguage, setMicLanguage] = useState<'ar-EG' | 'en-US'>('ar-EG');
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = false;
+      
+      rec.onstart = () => {
+        setIsRecording(true);
+        setRecordingError(null);
+      };
+      
+      rec.onerror = (event: any) => {
+        console.error('Speech recognition error', event);
+        if (event.error === 'not-allowed') {
+          setRecordingError('تم رفض الإذن بميكروفون');
+        } else if (event.error === 'no-speech') {
+          setRecordingError('لم يتم رصد صوت مكتوب');
+        } else {
+          setRecordingError(`خطأ: ${event.error}`);
+        }
+        setIsRecording(false);
+      };
+      
+      rec.onend = () => {
+        setIsRecording(false);
+      };
+
+      setRecognition(rec);
+    }
+  }, []);
+
+  const handleToggleMic = () => {
+    if (!recognition) {
+      // Simulation/fallback for environments without actual native browser SpeechRecognition API support
+      setRecordingError('محاكي الميكروفون: جاري تسجيل الصوت...');
+      setIsRecording(true);
+      setTimeout(() => {
+        const textSeed = micLanguage === 'ar-EG' 
+          ? 'المذكرة الصوتية الذكية: تفقد أداء النواة وتحسين المظهر والإنضمام لبوابة جيمي الذكي السحابي.'
+          : 'Smart Voice Memo: Audited kernel processes, telemetry checks completed, and Gemi AI sync validated.';
+        const label = micLanguage === 'ar-EG'
+          ? `مذكرة صوتية ${new Date().toLocaleTimeString('ar-EG', {hour: '2-digit', minute: '2-digit', second: '2-digit'})}.txt`
+          : `Audio Note ${new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', second: '2-digit'})}.txt`;
+        onCreateFile(label, textSeed, 'text');
+        setIsRecording(false);
+        setRecordingError(null);
+      }, 2500);
+      return;
+    }
+
+    if (isRecording) {
+      recognition.stop();
+    } else {
+      recognition.lang = micLanguage;
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[event.results.length - 1][0].transcript;
+        if (transcript && transcript.trim()) {
+          const timestampLabel = new Date().toLocaleTimeString('ar-EG', {hour: '2-digit', minute: '2-digit'});
+          const label = micLanguage === 'ar-EG' 
+            ? `مذكرة صوتية ${timestampLabel}.txt`
+            : `Audio Note ${timestampLabel}.txt`;
+          onCreateFile(label, transcript, 'text');
+        }
+      };
+      try {
+        recognition.start();
+      } catch (err) {
+        console.error('Recognition start err: ', err);
+      }
+    }
+  };
 
   useEffect(() => {
     if (currentFile) {
@@ -130,7 +209,7 @@ export default function NotepadApp({
         <div className="p-3 border-b border-slate-800">
           <span className="text-[10px] tracking-widest uppercase text-slate-400 font-bold block mb-2">مستندات السحابة والملفات</span>
           
-          <form onSubmit={handleCreateFile} className="flex gap-1.5">
+          <form onSubmit={handleCreateFile} className="flex gap-1.5 mb-2.5">
             <input
               type="text"
               value={newFileName}
@@ -146,6 +225,40 @@ export default function NotepadApp({
               <Plus className="w-3.5 h-3.5" />
             </button>
           </form>
+
+          {/* Micro memo audio recorder tools */}
+          <div className="pt-2 border-t border-slate-900 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[8px] font-bold text-slate-500">
+              <span>تسجيل مذكرة صوتية</span>
+              <select
+                value={micLanguage}
+                onChange={(e) => setMicLanguage(e.target.value as any)}
+                className="bg-transparent border-none text-slate-400 outline-none cursor-pointer text-[8px]"
+              >
+                <option value="ar-EG">العربية (Ar)</option>
+                <option value="en-US">English (En)</option>
+              </select>
+            </div>
+            
+            <button
+              onClick={handleToggleMic}
+              type="button"
+              className={`w-full py-1 rounded text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1 border ${
+                isRecording
+                  ? 'bg-rose-600 border-rose-700 text-white animate-pulse'
+                  : 'bg-indigo-950/40 hover:bg-indigo-900/40 border-indigo-500/20 text-indigo-300 hover:text-indigo-100'
+              }`}
+            >
+              <Mic className="w-3 h-3" />
+              <span>{isRecording ? 'جاري الاستماع...' : 'مذكرة ميكروفون'}</span>
+            </button>
+
+            {recordingError && (
+              <span className="text-[8px] text-rose-400 font-bold block text-center leading-tight">
+                {recordingError}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Files index */}

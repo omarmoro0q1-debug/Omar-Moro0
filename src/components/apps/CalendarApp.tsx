@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Check, Plus, Trash2, Tag, Bell, AlertTriangle, Sparkles, Filter, CheckCircle2, Circle, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, Clock, Check, Plus, Trash2, Tag, Bell, AlertTriangle, Sparkles, Filter, CheckCircle2, Circle, Search, ChevronLeft, ChevronRight, Activity, Download } from 'lucide-react';
 import { auth, db } from '../../firebase';
 import { collection, query, getDocs, setDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 export interface CalendarEvent {
   id: string;
@@ -78,6 +79,86 @@ export default function CalendarApp({ onAddNotification, soundEnabled }: Calenda
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterCompleted, setFilterCompleted] = useState<'all' | 'pending' | 'completed'>('all');
+
+  // Sub-navigation state
+  const [activeTab, setActiveTab] = useState<'calendar' | 'dashboard'>('calendar');
+
+  const handleExportJSON = () => {
+    if (events.length === 0) {
+      onAddNotification('تنبيه التصدير', 'لا توجد مهام أو مواعيد لتصديرها.', 'warning');
+      return;
+    }
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(events, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `gemileith_calendar_backup_${Date.now()}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      onAddNotification('تصدير ناجح', 'تم تحميل ملف النسخ الاحتياطي JSON بنجاح.', 'success');
+      playMechanicalSound(500, 'sine', 0.15);
+    } catch (e: any) {
+      onAddNotification('خطأ التصدير', 'فشل تصدير مواعيد التقويم كملف.', 'warning');
+    }
+  };
+
+  const handleExportICS = () => {
+    if (events.length === 0) {
+      onAddNotification('تنبيه التصدير', 'لا توجد مهام أو مواعيد لتصديرها.', 'warning');
+      return;
+    }
+    try {
+      let icsContent = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Gemileith OS Optimum//Calendar App//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH'
+      ];
+
+      events.forEach((evt) => {
+        const cleanTitle = evt.title.replace(/[,;]/g, '\\$&');
+        const cleanDesc = (evt.description || '').replace(/[,;]/g, '\\$&');
+        const dateRaw = evt.date.replace(/-/g, '');
+        const timeRaw = evt.time.replace(/:/g, '') + '00';
+        const startDateTime = `${dateRaw}T${timeRaw}`;
+        
+        const endHours = String((Number(evt.time.split(':')[0]) + 1) % 24).padStart(2, '0');
+        const endMinutes = evt.time.split(':')[1];
+        const endDateTime = `${dateRaw}T${endHours}${endMinutes}00`;
+
+        icsContent.push('BEGIN:VEVENT');
+        icsContent.push(`UID:${evt.id}@gemileith.os`);
+        icsContent.push(`DTSTAMP:${dateRaw}T120000Z`);
+        icsContent.push(`DTSTART;TZID=Africa/Cairo:${startDateTime}`);
+        icsContent.push(`DTEND;TZID=Africa/Cairo:${endDateTime}`);
+        icsContent.push(`SUMMARY:${cleanTitle}`);
+        icsContent.push(`DESCRIPTION:${cleanDesc}`);
+        icsContent.push('STATUS:CONFIRMED');
+        icsContent.push('END:VEVENT');
+      });
+
+      icsContent.push('END:VCALENDAR');
+      const text = icsContent.join('\r\n');
+      
+      const blob = new Blob([text], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", url);
+      downloadAnchor.setAttribute("download", `gemileith_calendar_${Date.now()}.ics`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      URL.revokeObjectURL(url);
+      
+      onAddNotification('تصدير ناجح', 'تم تصدير وتحميل ملف المواعيد القياسي ics بنجاح.', 'success');
+      playMechanicalSound(520, 'sine', 0.15);
+    } catch (e: any) {
+      onAddNotification('خطأ التصدير', 'فشل تصدير مواعيد التقويم كملف ics.', 'warning');
+    }
+  };
 
   // Trigger sound effect auxiliary
   const playMechanicalSound = (freq = 400, type: OscillatorType = 'sine', duration = 0.08) => {
@@ -396,290 +477,502 @@ export default function CalendarApp({ onAddNotification, soundEnabled }: Calenda
         </div>
       </div>
 
-      {/* Main app body panels split */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        
-        {/* RIGHT PANEL: The calendar grid & Controls */}
-        <div className="w-full lg:w-[50%] p-4 border-b lg:border-b-0 lg:border-l border-cyan-955/20 flex flex-col overflow-y-auto">
+      {/* Subnav tab selectors & export controllers */}
+      <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-2 bg-slate-950/45 border-b border-cyan-955/15 gap-2.5 shrink-0 text-xs text-right">
+        {/* Tab triggers */}
+        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-start">
+          <button
+            onClick={() => { playMechanicalSound(400); setActiveTab('calendar'); }}
+            type="button"
+            className={`px-3 py-1.5 rounded-md font-bold cursor-pointer transition-all flex items-center gap-1.5 border ${
+              activeTab === 'calendar'
+                ? 'bg-cyan-950/60 border-cyan-500 text-cyan-400 font-extrabold shadow-[0_0_8px_rgba(6,182,212,0.15)]'
+                : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>التقويم والمهام الحية</span>
+          </button>
           
-          {/* Calendar Month Header Selector */}
-          <div className="flex items-center justify-between mb-4 bg-cyan-950/10 p-2 rounded border border-cyan-500/10">
-            <button
-              onClick={prevMonth}
-              className="p-1 rounded cursor-pointer hover:bg-cyan-500/20 text-cyan-400 border border-transparent hover:border-cyan-500/20"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            <span className="text-xs font-bold font-mono text-cyan-400 select-all uppercase">
-              {monthNamesArabic[month]} {year}
-            </span>
-            <button
-              onClick={nextMonth}
-              className="p-1 rounded cursor-pointer hover:bg-cyan-500/20 text-cyan-400 border border-transparent hover:border-cyan-500/20"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={() => { playMechanicalSound(480); setActiveTab('dashboard'); }}
+            type="button"
+            className={`px-3 py-1.5 rounded-md font-bold cursor-pointer transition-all flex items-center gap-1.5 border relative ${
+              activeTab === 'dashboard'
+                ? 'bg-cyan-950/60 border-cyan-500 text-cyan-400 font-extrabold shadow-[0_0_8px_rgba(6,182,212,0.15)]'
+                : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5 animate-pulse" />
+            <span>لوحة التحليلات والإحصاء</span>
+          </button>
+        </div>
 
-          {/* SMTWThFS Arabic labels row */}
-          <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-cyan-600 mb-2 font-mono">
-            <div>الأحد</div>
-            <div>الإثنين</div>
-            <div>الثلاثاء</div>
-            <div>الأربعاء</div>
-            <div>الخميس</div>
-            <div>الجمعة</div>
-            <div>السبت</div>
-          </div>
+        {/* Backups exporters */}
+        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+          <span className="text-[10px] text-slate-500 hidden md:inline ml-1 font-sans">نسخة احتياطية:</span>
+          
+          <button
+            onClick={handleExportJSON}
+            type="button"
+            className="px-2.5 py-1.5 bg-slate-900/85 hover:bg-slate-800 border border-slate-800 rounded text-slate-200 hover:text-white flex items-center gap-1 cursor-pointer text-[10.5px] transition-all"
+            title="تحميل نسخة احتياطية محلية بصيغة JSON"
+          >
+            <Download className="w-3 h-3 text-cyan-400" />
+            <span>تصدير JSON</span>
+          </button>
 
-          {/* Calendar Days Matrix */}
-          <div className="grid grid-cols-7 gap-1.5 mb-4">
-            {daysGrid.map((day, idx) => {
-              if (day === null) {
-                return <div key={`empty-${idx}`} className="h-10 rounded-md bg-transparent" />;
-              }
-              
-              const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const isSelected = selectedDateStr === dayStr;
-              const isToday = new Date().toISOString().split('T')[0] === dayStr;
-              const dateTasks = getTasksForDate(day);
-              const pendingTasks = dateTasks.filter(t => !t.completed);
-              
-              return (
-                <button
-                  key={`day-${day}`}
-                  onClick={() => {
-                    playMechanicalSound(700, 'sine', 0.05);
-                    setSelectedDateStr(dayStr);
-                  }}
-                  className={`h-11 rounded-md cursor-pointer flex flex-col justify-between p-1 text-[11px] font-mono border transition-all text-right relative group ${
-                    isSelected
-                      ? 'bg-cyan-800/40 border-cyan-400 text-white font-extrabold shadow-[0_0_10px_rgba(34,211,238,0.2)]'
-                      : isToday
-                      ? 'bg-cyan-950/20 border-cyan-600 text-cyan-400 font-black'
-                      : 'bg-slate-950/40 border-slate-900 hover:border-cyan-950 text-slate-300'
-                  }`}
-                >
-                  <span className="self-end block">{day}</span>
-                  {dateTasks.length > 0 && (
-                    <div className="flex gap-0.5 mt-auto self-start">
-                      {pendingTasks.length > 0 ? (
-                        <span className={`w-1.5 h-1.5 rounded-full ${pendingTasks[0].category === 'urgent' ? 'bg-rose-500 animate-pulse' : 'bg-cyan-400'}`} />
-                      ) : (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      )}
-                      {dateTasks.length > 1 && (
-                        <span className="text-[7px] text-slate-500 leading-none shrink-0">+{dateTasks.length - 1}</span>
-                      )}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          <button
+            onClick={handleExportICS}
+            type="button"
+            className="px-2.5 py-1.5 bg-slate-900/85 hover:bg-slate-800 border border-slate-800 rounded text-slate-200 hover:text-white flex items-center gap-1 cursor-pointer text-[10.5px] transition-all"
+            title="تصدير المواعيد لتقويم Outlook/Apple/Google Calendar"
+          >
+            <Calendar className="w-3 h-3 text-emerald-400" />
+            <span>تصدير ICS (iCal)</span>
+          </button>
+        </div>
+      </div>
 
-          {/* Quick-add task drawer inline form for the selected day */}
-          <form onSubmit={handleAddEvent} className="bg-slate-950/70 p-3 rounded-lg border border-cyan-955/20 space-y-3 mt-auto">
-            <h4 className="text-[11px] font-bold text-cyan-400 flex items-center gap-1.5 border-b border-cyan-955/20 pb-1.5">
-              <Plus className="w-3.5 h-3.5" />
-              <span>إضافة حدث ليوم: {selectedDateStr}</span>
-            </h4>
+      {activeTab === 'calendar' ? (
+        /* Main app body panels split */
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden animate-fade-in">
+          
+          {/* RIGHT PANEL: The calendar grid & Controls */}
+          <div className="w-full lg:w-[50%] p-4 border-b lg:border-b-0 lg:border-l border-cyan-955/20 flex flex-col overflow-y-auto">
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              <div className="space-y-1">
-                <label className="text-[9px] text-slate-500">عنوان التذكير / المهمة</label>
+            {/* Calendar Month Header Selector */}
+            <div className="flex items-center justify-between mb-4 bg-cyan-950/10 p-2 rounded border border-cyan-500/10">
+              <button
+                onClick={prevMonth}
+                className="p-1 rounded cursor-pointer hover:bg-cyan-500/20 text-cyan-400 border border-transparent hover:border-cyan-500/20"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <span className="text-xs font-bold font-mono text-cyan-400 select-all uppercase">
+                {monthNamesArabic[month]} {year}
+              </span>
+              <button
+                onClick={nextMonth}
+                className="p-1 rounded cursor-pointer hover:bg-cyan-500/20 text-cyan-400 border border-transparent hover:border-cyan-500/20"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* SMTWThFS Arabic labels row */}
+            <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-cyan-600 mb-2 font-mono">
+              <div>الأحد</div>
+              <div>الإثنين</div>
+              <div>الثلاثاء</div>
+              <div>الأربعاء</div>
+              <div>الخميس</div>
+              <div>الجمعة</div>
+              <div>السبت</div>
+            </div>
+
+            {/* Calendar Days Matrix */}
+            <div className="grid grid-cols-7 gap-1.5 mb-4">
+              {daysGrid.map((day, idx) => {
+                if (day === null) {
+                  return <div key={`empty-${idx}`} className="h-10 rounded-md bg-transparent" />;
+                }
+                
+                const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = selectedDateStr === dayStr;
+                const isToday = new Date().toISOString().split('T')[0] === dayStr;
+                const dateTasks = getTasksForDate(day);
+                const pendingTasks = dateTasks.filter(t => !t.completed);
+                
+                return (
+                  <button
+                    key={`day-${day}`}
+                    onClick={() => {
+                      playMechanicalSound(700, 'sine', 0.05);
+                      setSelectedDateStr(dayStr);
+                    }}
+                    className={`h-11 rounded-md cursor-pointer flex flex-col justify-between p-1 text-[11px] font-mono border transition-all text-right relative group ${
+                      isSelected
+                        ? 'bg-cyan-800/40 border-cyan-400 text-white font-extrabold shadow-[0_0_10px_rgba(34,211,238,0.2)]'
+                        : isToday
+                        ? 'bg-cyan-950/20 border-cyan-600 text-cyan-400 font-black'
+                        : 'bg-slate-950/40 border-slate-900 hover:border-cyan-950 text-slate-300'
+                    }`}
+                  >
+                    <span className="self-end block">{day}</span>
+                    {dateTasks.length > 0 && (
+                      <div className="flex gap-0.5 mt-auto self-start">
+                        {pendingTasks.length > 0 ? (
+                          <span className={`w-1.5 h-1.5 rounded-full ${pendingTasks[0].category === 'urgent' ? 'bg-rose-500 animate-pulse' : 'bg-cyan-400'}`} />
+                        ) : (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        )}
+                        {dateTasks.length > 1 && (
+                          <span className="text-[7px] text-slate-500 leading-none shrink-0">+{dateTasks.length - 1}</span>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick-add task drawer inline form for the selected day */}
+            <form onSubmit={handleAddEvent} className="bg-slate-950/70 p-3 rounded-lg border border-cyan-955/20 space-y-3 mt-auto">
+              <h4 className="text-[11px] font-bold text-cyan-400 flex items-center gap-1.5 border-b border-cyan-955/20 pb-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                <span>إضافة حدث ليوم: {selectedDateStr}</span>
+              </h4>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-500">عنوان التذكير / المهمة</label>
+                  <input
+                    type="text"
+                    required
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="مثال: حوار جيمي الذكي السحابي"
+                    className="w-full bg-[#050608] border border-cyan-955/35 rounded px-2 py-1 text-xs text-white outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-500">الوقت (24 ساعة)</label>
+                  <input
+                    type="time"
+                    required
+                    value={newTime}
+                    onChange={(e) => setNewTime(e.target.value)}
+                    className="w-full bg-[#050608] border border-cyan-955/35 rounded px-2 py-1 text-xs text-white outline-none focus:border-cyan-500/50 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1 text-xs">
+                <label className="text-[9px] text-slate-500">الوصف والتفاصيل</label>
                 <input
                   type="text"
-                  required
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="مثال: حوار جيمي الذكي السحابي"
+                  value={newDesc}
+                  onChange={(e) => setNewDesc(e.target.value)}
+                  placeholder="برمجة كوانتم، تحسين خادم الروابط..."
                   className="w-full bg-[#050608] border border-cyan-955/35 rounded px-2 py-1 text-xs text-white outline-none focus:border-cyan-500/50"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-slate-500">الوقت (24 ساعة)</label>
-                <input
-                  type="time"
-                  required
-                  value={newTime}
-                  onChange={(e) => setNewTime(e.target.value)}
-                  className="w-full bg-[#050608] border border-cyan-955/35 rounded px-2 py-1 text-xs text-white outline-none focus:border-cyan-500/50 font-mono"
-                />
+
+              <div className="flex items-center justify-between gap-3 text-xs pt-1.5">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[9px] text-slate-500 block">التصنيف:</label>
+                  <div className="flex gap-1.5">
+                    {(['work', 'personal', 'urgent', 'reminder'] as const).map((cat) => (
+                      <button
+                        type="button"
+                        key={cat}
+                        onClick={() => {
+                          playMechanicalSound(650, 'sine', 0.05);
+                          setNewCategory(cat);
+                        }}
+                        className={`text-[9px] px-2 py-0.5 border rounded cursor-pointer transition-all ${
+                          newCategory === cat
+                            ? 'bg-cyan-950 border-cyan-500 text-cyan-400 font-bold'
+                            : 'bg-slate-900/60 border-slate-900 text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        {getCategoryThemeText(cat)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <button
+                  type="submit"
+                  className="bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-[10px] px-4 py-1.5 rounded cursor-pointer transition-colors flex items-center gap-1 shadow-md active:scale-95 border border-cyan-500/20"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>حفظ الحدث</span>
+                </button>
+              </div>
+            </form>
+
+          </div>
+
+          {/* LEFT PANEL: The Tasks and Events Hub scheduler list */}
+          <div className="w-full lg:w-[50%] p-4 flex flex-col overflow-hidden">
+            
+            {/* Header filter options row */}
+            <div className="flex flex-col gap-2 mb-3 shrink-0">
+              <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">لوحة المهام والمواعيد النشطة</span>
+              <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                
+                {/* Category selector */}
+                <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-cyan-955/20 text-slate-400">
+                  <Tag className="w-3 h-3 text-cyan-500" />
+                  <span>الفئة:</span>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="bg-transparent border-none text-slate-200 outline-none pr-1.5 text-[10px] cursor-pointer"
+                  >
+                    <option value="all">الكل</option>
+                    <option value="work">عمل</option>
+                    <option value="personal">شخصي</option>
+                    <option value="urgent">عاجل</option>
+                    <option value="reminder">تذكير</option>
+                  </select>
+                </div>
+
+                {/* Status selector */}
+                <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-cyan-955/20 text-slate-400 block">
+                  <Filter className="w-3 h-3 text-cyan-500" />
+                  <span>برمجة الإنجاز:</span>
+                  <select
+                    value={filterCompleted}
+                    onChange={(e) => setFilterCompleted(e.target.value as any)}
+                    className="bg-transparent border-none text-slate-200 outline-none pr-1.5 text-[10px] cursor-pointer"
+                  >
+                    <option value="all">الكل</option>
+                    <option value="pending">غير منجز</option>
+                    <option value="completed">مكتمل</option>
+                  </select>
+                </div>
+
+                <span className="text-[9px] text-cyan-500 mr-auto font-mono">{filteredEvents.length} تذكيرات نشطة</span>
               </div>
             </div>
 
-            <div className="space-y-1 text-xs">
-              <label className="text-[9px] text-slate-500">الوصف والتفاصيل</label>
-              <input
-                type="text"
-                value={newDesc}
-                onChange={(e) => setNewDesc(e.target.value)}
-                placeholder="برمجة كوانتم، تحسين خادم الروابط..."
-                className="w-full bg-[#050608] border border-cyan-955/35 rounded px-2 py-1 text-xs text-white outline-none focus:border-cyan-500/50"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3 text-xs pt-1.5">
-              <div className="flex items-center gap-1.5">
-                <label className="text-[9px] text-slate-500 block">التصنيف:</label>
-                <div className="flex gap-1.5">
-                  {(['work', 'personal', 'urgent', 'reminder'] as const).map((cat) => (
-                    <button
-                      type="button"
-                      key={cat}
-                      onClick={() => {
-                        playMechanicalSound(650, 'sine', 0.05);
-                        setNewCategory(cat);
-                      }}
-                      className={`text-[9px] px-2 py-0.5 border rounded cursor-pointer transition-all ${
-                        newCategory === cat
-                          ? 'bg-cyan-950 border-cyan-500 text-cyan-400 font-bold'
-                          : 'bg-slate-900/60 border-slate-900 text-slate-500 hover:text-slate-300'
+            {/* List layout of filtered events */}
+            <div className="flex-1 overflow-y-auto space-y-2 p-0.5">
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-500 space-y-2">
+                  <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs">جاري المزامنة مع Firestore...</span>
+                </div>
+              ) : filteredEvents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-8 bg-slate-950/20 border border-slate-900 rounded-lg text-center gap-2">
+                  <AlertTriangle className="w-6 h-6 text-slate-600" />
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-400">لا توجد مواعيد أو مهام نشطة</h5>
+                    <p className="text-[10px] text-slate-600 mt-0.5">غيّر الفلاتر أو حدد يوماً آخر لتدوين المواعيد.</p>
+                  </div>
+                </div>
+              ) : (
+                filteredEvents.map((evt) => {
+                  const eventTheme = getCategoryColor(evt.category);
+                  
+                  return (
+                    <div
+                      key={evt.id}
+                      className={`p-3 rounded-lg border bg-gradient-to-l flex items-start gap-3 transition-all ${eventTheme} ${
+                        evt.completed ? 'opacity-55' : 'shadow-[0_0_12px_rgba(6,182,212,0.03)]'
                       }`}
                     >
-                      {getCategoryThemeText(cat)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              <button
-                type="submit"
-                className="bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-[10px] px-4 py-1.5 rounded cursor-pointer transition-colors flex items-center gap-1 shadow-md active:scale-95 border border-cyan-500/20"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>حفظ الحدث</span>
-              </button>
-            </div>
-          </form>
+                      {/* Circle check toggler checkbox */}
+                      <button
+                        onClick={() => handleToggleComplete(evt)}
+                        className="cursor-pointer text-cyan-400 hover:scale-108 transition-transform mt-0.5 shrink-0"
+                      >
+                        {evt.completed ? (
+                          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                        ) : (
+                          <Circle className="w-5 h-5 text-slate-500 hover:text-cyan-400 transition-colors" />
+                        )}
+                      </button>
 
-        </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className={`font-black text-xs text-slate-100 truncate ${evt.completed ? 'line-through text-slate-500' : ''}`}>
+                            {evt.title}
+                          </h4>
+                          <span className="text-[8px] bg-cyan-950/40 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/20 font-bold uppercase font-mono mr-1.5">
+                            {getCategoryThemeText(evt.category)}
+                          </span>
+                        </div>
+                        
+                        <p className={`text-[10px] text-slate-400 font-sans mt-1 leading-normal ${evt.completed ? 'text-slate-500 line-through' : ''}`}>
+                          {evt.description || 'لا توجد تفاصيل إضافية لهذا الحدث.'}
+                        </p>
 
-        {/* LEFT PANEL: The Tasks and Events Hub scheduler list */}
-        <div className="w-full lg:w-[50%] p-4 flex flex-col overflow-hidden">
-          
-          {/* Header filter options row */}
-          <div className="flex flex-col gap-2 mb-3 shrink-0">
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">لوحة المهام والمواعيد النشطة</span>
-            <div className="flex flex-wrap items-center gap-2 text-[10px]">
-              
-              {/* Category selector */}
-              <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-cyan-955/20 text-slate-400">
-                <Tag className="w-3 h-3 text-cyan-500" />
-                <span>الفئة:</span>
-                <select
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  className="bg-transparent border-none text-slate-200 outline-none pr-1.5 text-[10px]"
-                >
-                  <option value="all">الكل</option>
-                  <option value="work">عمل</option>
-                  <option value="personal">شخصي</option>
-                  <option value="urgent">عاجل</option>
-                  <option value="reminder">تذكير</option>
-                </select>
-              </div>
-
-              {/* Status selector */}
-              <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-cyan-955/20 text-slate-400 block">
-                <Filter className="w-3 h-3 text-cyan-500" />
-                <span>برمجة الإنجاز:</span>
-                <select
-                  value={filterCompleted}
-                  onChange={(e) => setFilterCompleted(e.target.value as any)}
-                  className="bg-transparent border-none text-slate-200 outline-none pr-1.5 text-[10px]"
-                >
-                  <option value="all">الكل</option>
-                  <option value="pending">غير منجز</option>
-                  <option value="completed">مكتمل</option>
-                </select>
-              </div>
-
-              <span className="text-[9px] text-cyan-500 mr-auto font-mono">{filteredEvents.length} تذكيرات نشطة</span>
-            </div>
-          </div>
-
-          {/* List layout of filtered events */}
-          <div className="flex-1 overflow-y-auto space-y-2 p-0.5">
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-500 space-y-2">
-                <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs">جاري المزامنة مع Firestore...</span>
-              </div>
-            ) : filteredEvents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-8 bg-slate-950/20 border border-slate-900 rounded-lg text-center gap-2">
-                <AlertTriangle className="w-6 h-6 text-slate-600" />
-                <div>
-                  <h5 className="text-xs font-bold text-slate-400">لا توجد مواعيد أو مهام نشطة</h5>
-                  <p className="text-[10px] text-slate-600 mt-0.5">غيّر الفلاتر أو حدد يوماً آخر لتدوين المواعيد.</p>
-                </div>
-              </div>
-            ) : (
-              filteredEvents.map((evt) => {
-                const eventTheme = getCategoryColor(evt.category);
-                
-                return (
-                  <div
-                    key={evt.id}
-                    className={`p-3 rounded-lg border bg-gradient-to-l flex items-start gap-3 transition-all ${eventTheme} ${
-                      evt.completed ? 'opacity-55' : 'shadow-[0_0_12px_rgba(6,182,212,0.03)]'
-                    }`}
-                  >
-                    {/* Circle check toggler checkbox */}
-                    <button
-                      onClick={() => handleToggleComplete(evt)}
-                      className="cursor-pointer text-cyan-400 hover:scale-108 transition-transform mt-0.5 shrink-0"
-                    >
-                      {evt.completed ? (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                      ) : (
-                        <Circle className="w-5 h-5 text-slate-500 hover:text-cyan-400 transition-colors" />
-                      )}
-                    </button>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h4 className={`font-black text-xs text-slate-100 truncate ${evt.completed ? 'line-through text-slate-500' : ''}`}>
-                          {evt.title}
-                        </h4>
-                        <span className="text-[8px] bg-cyan-950/40 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/20 font-bold uppercase font-mono mr-1.5">
-                          {getCategoryThemeText(evt.category)}
-                        </span>
+                        <div className="flex items-center gap-3 text-[9px] font-bold text-slate-500 mt-2 font-mono">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-cyan-600" />
+                            <span>{evt.time}</span>
+                          </span>
+                          <span>•</span>
+                          <span>{evt.date}</span>
+                        </div>
                       </div>
-                      
-                      <p className={`text-[10px] text-slate-400 font-sans mt-1 leading-normal ${evt.completed ? 'text-slate-500 line-through' : ''}`}>
-                        {evt.description || 'لا توجد تفاصيل إضافية لهذا الحدث.'}
-                      </p>
 
-                      <div className="flex items-center gap-3 text-[9px] font-bold text-slate-500 mt-2 font-mono">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-cyan-600" />
-                          <span>{evt.time}</span>
-                        </span>
-                        <span>•</span>
-                        <span>{evt.date}</span>
-                      </div>
+                      {/* Delete event red button */}
+                      <button
+                        onClick={() => handleDeleteEvent(evt.id, evt.title)}
+                        className="p-1.5 bg-slate-900/40 hover:bg-rose-950/40 text-slate-500 hover:text-rose-400 border border-transparent hover:border-rose-900/30 rounded cursor-pointer transition-all self-center"
+                        title="حذف الحدث"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
+                  );
+                })
+              )}
+            </div>
 
-                    {/* Delete event red button */}
-                    <button
-                      onClick={() => handleDeleteEvent(evt.id, evt.title)}
-                      className="p-1.5 bg-slate-900/40 hover:bg-rose-950/40 text-slate-500 hover:text-rose-400 border border-transparent hover:border-rose-900/30 rounded cursor-pointer transition-all self-center"
-                      title="حذف الحدث"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })
-            )}
           </div>
 
         </div>
+      ) : (
+        /* Dashboard view panel utilizing Recharts and responsive metrics */
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 animate-fade-in text-right">
+          
+          {/* Summary KPI Grid Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-slate-950/65 border border-cyan-500/10 p-3 rounded-lg flex flex-col justify-between">
+              <span className="text-[10px] text-slate-450 block mb-1">إجمالي المهام والفعاليات</span>
+              <div className="text-xl font-mono font-extrabold text-cyan-400">{events.length}</div>
+              <span className="text-[8px] text-slate-500">منظّم المهام الذاتي المحمي</span>
+            </div>
+            
+            <div className="bg-slate-950/65 border border-emerald-500/10 p-3 rounded-lg flex flex-col justify-between">
+              <span className="text-[10px] text-slate-450 block mb-1">نسبة الإنجاز الإجمالية</span>
+              <div className="text-xl font-mono font-extrabold text-emerald-400">
+                {events.length > 0 ? Math.round((events.filter(e => e.completed).length / events.length) * 100) : 0}%
+              </div>
+              <span className="text-[8px] text-slate-500">
+                {events.filter(e => e.completed).length} من {events.length} مكتملة
+              </span>
+            </div>
 
-      </div>
+            <div className="bg-slate-950/65 border border-rose-500/10 p-3 rounded-lg flex flex-col justify-between">
+              <span className="text-[10px] text-slate-450 block mb-1">المهام المعلقة والمنتظرة</span>
+              <div className="text-xl font-mono font-extrabold text-rose-405">{events.filter(e => !e.completed).length}</div>
+              <span className="text-[8px] text-slate-500 flex items-center gap-1">
+                <span className="w-1 h-1 rounded-full bg-rose-500 animate-ping" />
+                تنتظر الإنجاز والعمل
+              </span>
+            </div>
+
+            <div className="bg-slate-950/65 border border-amber-500/10 p-3 rounded-lg flex flex-col justify-between">
+              <span className="text-[10px] text-slate-450 block mb-1">حالة الطوارئ والانتباه</span>
+              <div className="text-medium font-bold text-amber-400 truncate text-xs pt-1">
+                {events.some(e => e.category === 'urgent' && !e.completed) ? 'انتباه: مهام عاجلة نشطة' : 'النظام مستقر وآمن'}
+              </div>
+              <span className="text-[8px] text-slate-500">مراقبة التنبيهات والأحداث</span>
+            </div>
+          </div>
+
+          {/* Graphical Analytics Charts via Recharts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            
+            {/* Horizontal Stacked Category Bar chart */}
+            <div className="bg-slate-950/50 border border-cyan-500/10 p-4 rounded-lg flex flex-col min-h-[300px]">
+              <h3 className="text-xs font-extrabold text-cyan-400 mb-3 flex items-center gap-1.5 self-start">
+                <Activity className="w-4 h-4 text-cyan-400 animate-pulse" />
+                <span>توزيع إنجاز المهام حسب الفئة التخصصية</span>
+              </h3>
+              
+              <div className="flex-1 w-full min-h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={(['work', 'personal', 'urgent', 'reminder'] as const).map((cat) => {
+                      const catEvents = events.filter(e => e.category === cat);
+                      const completed = catEvents.filter(e => e.completed).length;
+                      const pending = catEvents.filter(e => !e.completed).length;
+                      return {
+                        name: cat === 'personal' ? 'شخصي' : cat === 'urgent' ? 'عاجل' : cat === 'reminder' ? 'تذكير' : 'عمل',
+                        'مكتمل': completed,
+                        'معلق': pending
+                      };
+                    })}
+                    margin={{ top: 10, right: 10, left: -25, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={10} tickLine={false} />
+                    <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#050608', borderColor: '#22d3ee', fontSize: 10, direction: 'rtl' }}
+                      itemStyle={{ color: '#fff' }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 9 }} />
+                    <Bar name="مكتملة" dataKey="مكتمل" fill="#10b981" radius={[3, 3, 0, 0]} />
+                    <Bar name="معلقة" dataKey="معلق" fill="#f43f5e" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Total categories weights pie donut chart */}
+            <div className="bg-slate-950/50 border border-cyan-500/10 p-4 rounded-lg flex flex-col min-h-[300px]">
+              <h3 className="text-xs font-extrabold text-cyan-400 mb-3 flex items-center gap-1.5 self-start">
+                <Tag className="w-4 h-4 text-cyan-500" />
+                <span>الكثافة والنسب المئوية للتصانيف</span>
+              </h3>
+              
+              {events.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs italic">
+                  لا توجد مهام نشطة لحساب النسب المئوية.
+                </div>
+              ) : (
+                <div className="flex-1 w-full min-h-[220px] flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex-1 h-full w-full max-h-[170px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={(['work', 'personal', 'urgent', 'reminder'] as const).map((cat) => {
+                            return {
+                              name: cat === 'personal' ? 'شخصي' : cat === 'urgent' ? 'عاجل' : cat === 'reminder' ? 'تذكير' : 'عمل',
+                              value: events.filter(e => e.category === cat).length
+                            };
+                          }).filter(c => c.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={40}
+                          outerRadius={56}
+                          paddingAngle={3}
+                          dataKey="value"
+                        >
+                          {['#22d3ee', '#10b981', '#f43f5e', '#f59e0b'].map((color, index) => (
+                            <Cell key={`cell-${index}`} fill={color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#050608', borderColor: '#22d3ee', fontSize: 9, direction: 'rtl' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  {/* Categorized stats rows details */}
+                  <div className="space-y-1 w-full sm:w-1/3 text-xs pr-2 flex flex-col justify-center">
+                    {([
+                      { cat: 'work', label: 'عمل', color: '#22d3ee' },
+                      { cat: 'personal', label: 'شخصي', color: '#10b981' },
+                      { cat: 'urgent', label: 'عاجل', color: '#f43f5e' },
+                      { cat: 'reminder', label: 'تذكير', color: '#f59e0b' }
+                    ]).map(({ cat, label, color }) => {
+                      const count = events.filter(e => e.category === cat).length;
+                      const pct = events.length > 0 ? Math.round((count / events.length) * 100) : 0;
+                      return (
+                        <div key={cat} className="flex items-center justify-between gap-2 border-b border-white/5 pb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                            <span className="text-slate-300 font-bold">{label}</span>
+                          </div>
+                          <span className="font-mono text-slate-500 font-extrabold">{percentString(pct)} ({count})</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
     </div>
   );
+}
+
+function percentString(pct: number): string {
+  return `${pct}%`;
 }

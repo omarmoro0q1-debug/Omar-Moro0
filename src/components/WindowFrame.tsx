@@ -98,19 +98,27 @@ export default function WindowFrame({
       style={{
         ...style,
         display: windowState.isMinimized ? 'none' : 'flex',
+        backgroundColor: 'var(--bg-window, #050608)',
+        border: '1px solid var(--border-primary, rgba(6, 182, 212, 0.2))',
+        boxShadow: 'var(--shadow-primary, 0 0 20px rgba(6, 182, 212, 0.12))',
       }}
-      className="flex-col bg-[#050608]/95 border border-cyan-500/20 rounded-lg overflow-hidden shadow-[0_0_20px_rgba(6,182,212,0.12)]"
+      className="flex-col rounded-lg overflow-hidden transition-all duration-300"
       onClick={onFocus}
     >
       {/* Title/Header Drag Bar */}
       <div
         onMouseDown={handleMouseDown}
-        className="h-10 shrink-0 bg-[#0c0f17] border-b border-cyan-955/25 select-none flex items-center justify-between px-3.5 cursor-move text-cyan-400"
+        style={{
+          backgroundColor: 'var(--bg-header, #0c0f17)',
+          borderBottom: '1px solid var(--border-secondary, rgba(6, 185, 212, 0.15))',
+          color: 'var(--text-primary, #22d3ee)',
+        }}
+        className="h-10 shrink-0 select-none flex items-center justify-between px-3.5 cursor-move transition-all duration-300 text-cyan-400"
       >
         {/* Title & Icon */}
         <div className="flex items-center gap-2">
           <span className="text-sm font-sans">{windowState.icon}</span>
-          <span className="text-[11.5px] font-bold tracking-wide select-none truncate max-w-[200px]">{windowState.title}</span>
+          <span className="text-[11.5px] font-bold tracking-wide select-none truncate max-w-[200px]" style={{ color: 'var(--text-primary, #22d3ee)' }}>{windowState.title}</span>
         </div>
 
         {/* Action Window Controls (minimize, maximize, close) */}
@@ -154,7 +162,10 @@ export default function WindowFrame({
       </div>
 
       {/* Frame body placeholder */}
-      <div className="flex-1 bg-slate-900 overflow-hidden relative">
+      <div 
+        style={{ backgroundColor: 'var(--bg-inner, #0f172a)' }}
+        className="flex-1 overflow-hidden relative transition-all duration-300"
+      >
         {children}
       </div>
     </motion.div>
